@@ -1,0 +1,38 @@
+The following steps were taken to calibrate VISIR 2018 Neptune spectra.
+I used the ESOREX pipeline to partly reduce the spectra and custom IDL codes for further reduction and calibration. I found the custom calibrations were necessary as the ESOREX pipeline failed to provide an accurate result, but individual results may vary.  Calibrated spectra radiances were compared to Spitzer spectra and appear consistent. 
+-Mike Roman, August 2020
+
+1. Reduce the spectra for both star and planet with the ESOREX pipeline, which takes care of shearing, bowing,  and other effects. The command is:
+
+        esorex visir_spc_reduce file_list.sof
+        I used the default parameters with good results.
+
+2. Extract wavelengths from the resulting esorex products. e.g. in IDL:
+ftab_ext,planetspecfile,[1,2,3,4,5,6],wlen,spc_model_ph,spc_model_xc,spc_sky,spc_extracted,spc_error
+ftab_ext,starfile,[1,2,3,4,5,6,7,8],xwlen,xspc_model_phs,xspc_model_xc,xspc_sky,xspc_extracted,xspc_error,xstd_star_model,xsensitivity
+3. Extract the spectral image arrays for star and planet, which are ext=2 in the fits files
+
+4. At this stage, I clean up the spectral images by subtracting an interpolated background to remove any obvious artifacts. Optional.
+
+5. Extract a spectrum from the star. Assuming you have a positive spectrum between two negative spectrum in the image, the mean will be zero, so march through the image, column by column, and subtract the mean of each column vector from each column. Then collapse the spectral image array in wavelength (preserving the spatial dimension), providing a single vector of weights.  Finally, normalize each column (iteratively) by these weights.  E.g. in IDL:
+
+    for i=0,1023 do starimg(*,i)=starimg(*,i)-mean(starimg(*,i))
+    fluxprof=total(starimg,2)
+    weights=abs(fluxprof)/total((abs(fluxprof)))
+    starspec=fltarr(1024)
+    for i=0,1023 do starspec(i)=total(abs(starimg(*,i))*weights)/total(weights)
+        This yields a properly reduced stellar spectrum. You may choose to simply trust the pipeline extraction on this one, as it is consistent with the pipeline output.
+
+6. (Optional) Reduce the stellar spectrum for slit-loss due to differential diffraction. For this, I followed coding from Leigh Fletcher, in which one compares the expected diffraction FWHM of the star to the spectral slit width as a function of wavelength and attempts to determine a slit loss correction factor. These calculations suggest a loss of about 3% at 6 um growing to about 30% at 14 um, but apprach with caution, as it essentially introduces a slope to the spectrum. In the case of Neptune, the slope inconsistent with Spitzer, and a 40% offset at all wavelengths is undoubtedly more consistent.
+
+7. Clean up the planetary spectra of artifacts as necessary, and create 2D arrays of the observed and model star spectra form the 1D arrays. You may choose to interpolate them onto the precise planetary wavelength grid if they differ.
+
+8. Finally, convert your spectral images from ADU/s to spectral radiance (W/cm/sr/cm-1 or um-1) by the following:
+  
+  calspec= specimg * starmodel / starobserved /1000. *  c * 1e-26/1.e4/omegafact 
+  
+   ...where c is the speed of light in cm/s or um/s depending whether you want per cm-1 or per um-1, and omegafact is the tricky conversion factor that takes the solid angle of the slit into account:
+       
+  omegafact= slitwidth^2 / (180./!pi*60.*60.)^2.
+        
+        
